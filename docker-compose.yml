@@ -1,0 +1,67 @@
+name: datapump-pipeline-test
+
+x-oracle-common: &oracle-common
+  image: container-registry.oracle.com/database/free@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba
+  environment:
+    ORACLE_PWD: ${ORACLE_PWD:?Set ORACLE_PWD in .env before running Compose}
+  healthcheck:
+    test:
+      [
+        'CMD-SHELL',
+        "echo 'select 1 from dual;' | sqlplus -s / as sysdba | grep -q 1",
+      ]
+    interval: 30s
+    timeout: 10s
+    retries: 20
+    start_period: 5m
+  restart: unless-stopped
+
+services:
+  oracle-source:
+    <<: *oracle-common
+    hostname: oracle-source
+    ports:
+      - '127.0.0.1:${ORACLE_SOURCE_PORT:-1621}:1521'
+      - '127.0.0.1:${ORACLE_SOURCE_EM_PORT:-5600}:5500'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "printf \"set heading off feedback off pages 0\\nalter session set container=FREEPDB1;\\nselect case when (select count(*) from dba_tables where owner in ('IAM','CATALOG','COMMERCE','FINANCE'))=98 and (select count(*) from dba_views where owner in ('IAM','CATALOG','COMMERCE','FINANCE'))=5 and (select count(*) from dba_sequences where sequence_owner='IAM' and sequence_name='SOURCE_SEED_COMPLETE')=1 then 'READY' else 'WAIT' end from dual;\\n\" | sqlplus -s / as sysdba | grep -q READY",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 5m
+    volumes:
+      - oracle-source-data:/opt/oracle/oradata
+      - ./oracle/source-init:/opt/oracle/scripts/custom:ro
+      - ./oracle/source-startup:/opt/oracle/scripts/startup:ro
+
+  oracle-destination:
+    <<: *oracle-common
+    hostname: oracle-destination
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          sqlplus -s / as sysdba <<'SQL' | grep -q '^[[:space:]]*READY[[:space:]]*$$'
+          whenever sqlerror exit 1
+          whenever oserror exit 1
+          set heading off feedback off pages 0
+          alter session set container=FREEPDB1;
+          select 'READY' from v$$pdbs where name='FREEPDB1' and open_mode='READ WRITE';
+          SQL
+      interval: 15s
+      timeout: 10s
+      retries: 80
+      start_period: 5m
+    ports:
+      - '127.0.0.1:${ORACLE_DESTINATION_PORT:-1622}:1521'
+      - '127.0.0.1:${ORACLE_DESTINATION_EM_PORT:-5601}:5500'
+    volumes:
+      - oracle-destination-data:/opt/oracle/oradata
+
+volumes:
+  oracle-source-data:
+  oracle-destination-data:

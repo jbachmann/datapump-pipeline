@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+artifacts/
+node_modules/
+dist/
+*.dmp
+*.log
+__pycache__/
