@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const operation = args.slice(args.indexOf('--file') + 2);
@@ -9,6 +9,10 @@ appendFileSync(process.env.CALLS, `${JSON.stringify({ args: operation, sql, comp
 const scenario = process.env.SCENARIO;
 if (operation[0] === 'ps') console.log(scenario === 'unavailable' ? 'unhealthy' : 'healthy');
 else if (operation[0] === 'cp' && operation.at(-1)?.startsWith('oracle-destination:') && scenario === 'transfer_error') process.exit(1);
+else if (operation[0] === 'cp' && operation[1]?.endsWith('.sql')) {
+  if (scenario === 'sql_copy_error') process.exit(1);
+  writeFileSync(operation[2], '-- Generated DDL\nCREATE TABLE example (id NUMBER);\n');
+}
 else if (operation[0] === 'exec') {
   if (sql.includes('select directory_path')) console.log('/oracle/dpdump');
   else if (sql.includes('select count(*) from dba_tab_privs')) console.log(scenario === 'existing_grant' ? '1' : '0');

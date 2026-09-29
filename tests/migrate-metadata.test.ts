@@ -35,6 +35,46 @@ function run(scenario: string, entry = 'migrate-metadata.ts') {
 const reset = (calls: Call[]) => calls.findIndex((call) => call.sql.includes('DROP USER'));
 const revoke = (calls: Call[]) => calls.some((call) => call.sql.includes('revoke index on IAM.PERMISSIONS'));
 
+test('SQL export generates and copies SQL using only the source database', () => {
+  const result = run('success', 'export-sql.ts');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.entries.every((call) => !call.args.some((arg) => arg.includes('oracle-destination'))));
+  assert.equal(reset(result.entries), -1);
+  assert.ok(!result.entries.some((call) => /grant index on|compile_schema/.test(call.sql)));
+  const pumps = result.entries.filter((call) => call.args.includes('expdp') || call.args.includes('impdp'));
+  assert.equal(pumps.length, 2);
+  assert.ok(pumps[0].args.includes('expdp'));
+  const args = pumps[1].args;
+  assert.ok(args.includes('impdp'));
+  assert.ok(args.includes('oracle-source'));
+  assert.ok(args.includes('TRANSFORM=SEGMENT_ATTRIBUTES:N'));
+  assert.ok(args.includes('TRANSFORM=SEGMENT_CREATION:N'));
+  assert.ok(!args.some((arg) => /^(INCLUDE|EXCLUDE)=/.test(arg)));
+  assert.equal(args.find((arg) => arg.startsWith('DUMPFILE=')), pumps[0].args.find((arg) => arg.startsWith('DUMPFILE=')));
+  for (const call of pumps) assert.ok(call.args.includes('CONTENT=METADATA_ONLY'));
+  const filename = args.find((arg) => arg.startsWith('SQLFILE='))!.slice('SQLFILE='.length);
+  assert.match(result.logs[filename], /CREATE TABLE/);
+  assert.match(result.stdout, /SQL file:.*\.sql/);
+});
+
+for (const scenario of ['unavailable', 'export_error', 'import_error', 'sql_copy_error']) {
+  test(`SQL export ${scenario} reports failure`, () => {
+    const result = run(scenario, 'export-sql.ts');
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /completed successfully|SQL file:/);
+    assert.match(result.stdout, /Artifacts:/);
+    assert.equal(reset(result.entries), -1);
+    if (scenario === 'unavailable' || scenario === 'export_error') {
+      assert.ok(!result.entries.some((call) => call.args.includes('impdp')));
+    }
+    if (scenario === 'import_error') {
+      assert.equal(result.status, 5);
+      assert.match(result.logs['sqlfile-client.log'], /completed with errors/);
+      assert.ok(result.entries.some((call) => call.args[0] === 'cp' && call.args[1].endsWith('_sqlfile.log')));
+    }
+  });
+}
+
 for (const scenario of ['unavailable', 'export_error', 'transfer_error']) {
   test(`${scenario} stops before destination reset`, () => {
     const result = run(scenario);

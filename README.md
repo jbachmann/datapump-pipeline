@@ -102,6 +102,35 @@ hook remains Bash because it runs inside the Oracle container. Small Bash
 commands inside the containers handle Oracle client authentication and file
 permissions without requiring Node.js in the database image.
 
+## Export metadata as SQL
+
+Only the source database needs to be running:
+
+```sh
+node scripts/compose.ts up -d --wait oracle-source
+npm run export:sql
+# Equivalent:
+node scripts/export-sql.ts
+```
+
+This exports the same seven schemas with `CONTENT=METADATA_ONLY`, then runs
+`impdp` on the source using `SQLFILE` and the same segment transforms as the
+migration. It generates all metadata in one pass, including indexes and
+constraints. No destination connection, schema reset, temporary grants, or
+compilation is performed.
+
+Data Pump still requires a database connection to process the dump; this command
+uses `oracle-source/FREEPDB1` for both steps. Oracle's
+[SQLFILE parameter](https://docs.oracle.com/en/database/oracle/oracle-database/21/sutil/oracle-datapump-import-utility.html)
+writes the prepared DDL without executing it. Review the SQL before running it
+manually; it is Data Pump output, not the migration script's reset and grant workflow.
+
+The command prints the generated `.sql` path and retains it alongside the `.dmp`
+and client/server logs in `artifacts/datapump/<run-id>/`. Unique files also remain
+in the source container's `DATA_PUMP_DIR`. Failures return nonzero and retain
+available logs; a SQL file is only reported as ready after generation and copying
+both succeed.
+
 ## Included initialization
 
 - `docker-compose.yml`: pinned Oracle image, separate persistent source and
