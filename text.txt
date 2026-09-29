@@ -1,0 +1,2 @@
+"start": "node scripts/compose.ts up -d --wait --wait-timeout 1200",
+    "compose": "node scripts/compose.ts",

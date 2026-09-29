@@ -5,7 +5,7 @@ it needs no files, Node.js dependencies, or configuration from the parent projec
 It provides two local Oracle Free databases and a script to migrate schema
 metadata between them using Oracle Data Pump.
 
-Requirements: Docker with Compose supporting `up --wait`, and access to the
+Requirements: Node.js 24+, Docker with Compose supporting `up --wait`, and access to the
 Oracle container registry image pinned in `docker-compose.yml`.
 
 ## Start the databases
@@ -20,7 +20,7 @@ Set `ORACLE_PWD` in `.env` to your development database password, then start:
 
 ```sh
 npm start
-bash scripts/compose.sh ps
+node scripts/compose.ts ps
 ```
 
 All wrapper commands load `.env` automatically. An exported `ORACLE_PWD` takes
@@ -51,7 +51,7 @@ Start both databases with `npm start`, then run:
 ```sh
 npm run migrate:metadata
 # Equivalent:
-bash scripts/migrate-metadata.sh
+node scripts/migrate-metadata.ts
 ```
 
 The script targets only `oracle-source` and `oracle-destination`, using
@@ -93,8 +93,14 @@ for Data Pump errors, and attempts to collect server logs even after failure.
 Artifacts can contain schema definitions and security metadata; keep them
 private and remove old runs and container copies when no longer needed.
 
-Run `npm test` for the Docker-independent failure/order checks (requires
-Python 3), and `bash -n scripts/migrate-metadata.sh` for Bash syntax validation.
+Run `npm test` for the TypeScript tests using Node's built-in test runner.
+For development, install the type-checking tools with `npm ci`, then run
+`npm run typecheck`. Runtime scripts need no npm dependencies or build step.
+
+Host-side orchestration and tests are written in TypeScript. The source startup
+hook remains Bash because it runs inside the Oracle container. Small Bash
+commands inside the containers handle Oracle client authentication and file
+permissions without requiring Node.js in the database image.
 
 ## Included initialization
 
@@ -133,7 +139,7 @@ volume that already has the completion marker.
 Open a local SQL session without putting a password in process arguments:
 
 ```sh
-bash scripts/compose.sh exec oracle-source sqlplus / as sysdba
+node scripts/compose.ts exec oracle-source sqlplus / as sysdba
 ```
 
 In SQL*Plus, run `ALTER SESSION SET CONTAINER = FREEPDB1;` before inspecting the
@@ -142,14 +148,14 @@ application schemas. Substitute `oracle-destination` to inspect the destination.
 Stop containers while preserving their data:
 
 ```sh
-bash scripts/compose.sh down
+node scripts/compose.ts down
 ```
 
 To delete **both databases and all their data** and start fresh:
 
 ```sh
-bash scripts/compose.sh down --volumes
-bash scripts/compose.sh up -d --wait --wait-timeout 1200
+node scripts/compose.ts down --volumes
+node scripts/compose.ts up -d --wait --wait-timeout 1200
 ```
 
 Moving this folder does not move Docker-managed data. On the same Docker daemon,
